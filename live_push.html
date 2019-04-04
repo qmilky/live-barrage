@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <!--引入的 jquery 必须是 https，因为打开本地摄像头必须使用 https 协议-->
+    <script src="https://apps.bdimg.com/libs/jquery/2.1.4/jquery.min.js"></script>
+    <script src="./dist/barrage.js"></script>
+    <!--rel="shortcut icon" 中的 icon 必须有-->
+    <link rel="shortcut icon" href="./wjx.png" />
+
+    <title>直播 swoole</title>
+
+</head>
+<body>
+
+<from>
+    <input id="select-camera" type="radio" value="camera" name="play-type" checked/>摄像头
+    <br />
+    <input id="select-video" type="radio" value="files" name="play-type"/>视频文件
+    <br />
+    <input type="file" name="file-selector" id="file-selector" style="display:none;"/>
+
+</from>
+<p id="message"></p>
+<video controls="controls" style="display:none;" id="video"></video>
+<canvas id="canvas" style="display:none"></canvas>
+
+<br />
+<button id="start-push">开始推送</button> |
+<button id="stop-push">停止推送</button>
+<br/>
+<label for="compress-percent" >压缩比例：</label>
+<input id="compress-percent" name="compress-percent" type="text" value="70" style="width:30px;"/> %
+
+<script>
+//添加设置 localStorage 对象的 selector 属性为 1，1 表明要用摄像头进行直播，0 表明要选择视频文件进行直播
+localStorage.selector = 1;
+var ws = new WebSocket('ws://127.0.0.1:9999/push');
+ws.onopen = function (){
+    console.log('handshack success');
+};
+ws.onmessage = function(e){
+    //弹幕相关
+    var data = e.data;
+    var index = data.lastIndexOf("\-");
+    var type = data.substring(index + 1,data.length);
+    var msg = data.substring(0, index);
+    if(type == "barrage")
+    {
+
+    }
+
+}
+ws.onerror = function(){
+    $('#message').html('WebSocket Error');
+    console.log('WebSocket error');
+}
+
+var video = document.querySelector('video');
+// var canvas = window.canvas = document.querySelector('canvas');
+var canvas = document.querySelector('canvas');
+$('#select-video').on('click',function(){
+    $('#file-selector').show();
+    localStorage.selector = 0;
+});
+$('#select-camera').on('click', function(){
+    $('#file-selector').hide();
+    localStorage.selector = 1;
+});
+
+//设置打开 摄像头（前置，后置摄像头；拍摄范围：宽高） 或者 话筒
+var constraints = {video:{width: 480, height: 320, facingMode: "environment"}, audio:true};
+//开始推送相关
+$('#start-push').on('click', function(){
+    $('#canvas').show();
+    //定时器的作用，点击开始推送时一直调用函数 draw(id) 进行一帧一帧的绘图并将绘制好的图片通过 ws.push()推送到 swoole server，点击停止推送时通过传递的 id 清除定时器
+    var id = setInterval(function(){
+        draw(id);
+    }, 24);  //24 微秒
+    if(parseInt(localStorage.selector) == 1){  //如果是打开摄像头直播，调取本地摄像头实现实时视频及拍照功能
+        //调取本地摄像头实现实时视频及拍照功能
+        if(navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia(constraints).then(handleSuccess).catch(handleError);
+        }else if(navigator.webkitGetUserMedia) {
+            //webkit核心浏览器
+            navigator.webkitGetUserMedia(constraints,handleSuccess, handleError)
+        } else if (navigator.mozGetUserMedia) {
+            //firfox浏览器
+            navigator.mozGetUserMedia(constraints, handleSuccess, handleError);
+        } else if (navigator.getUserMedia) {
+            //旧版API
+            navigator.getUserMedia(constraints, handleSuccess, handleError);
+        }
+    }else{
+        $('#video')[0].play();
+    }
+});
+
+
+
+function draw(id)
+{
+    localStorage.interval_id = id;  //一个定时器设置一个就好了，没必要写到此函数中，每一帧都要存储一遍
+    if(ws.readyState == 1){  //连接建立可以正常通讯
+        //开始绘图
+        var compress_percent = parseInt($('#compress-percent').val())/100;  //压缩比例
+        canvas.width = video.videoWidth * compress_percent;
+        canvas.height = video.videoHeight * compress_percent;
+        //video 表明根据谁绘图，（0，0）代表从左上角开始，（canvas.width, canvas.height）代表结束位置，2d代表绘制2d图
+        canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+        push(canvas.toDataURL('image/webp'));
+    }
+}
+
+function push(data)
+{
+    // msg = JSON.stringify({"msg":data,"type":"live"}); //因为 data 中有逗号 ','，直接用此函数会报错
+    ws.send(data + '-live');  // WebSocket 中是 send 不是 push
+}
+
+function handleSuccess(stream)
+{
+    window.stream = stream;
+    // video.src = filepath;  // video.src 注意设置视频文件路径，video.srcObject = stream 以流的形式设置视频源
+    video.srcObject = stream; //此处 video 为 p50 行获取的 video 对象；将视频流设置为video元素的源
+    video.onloadedmetadata = function(e)
+    {
+        //将本地摄像头录制的视频在 video 标签中进行播放
+        video.play(); //没有此步，打开摄像头会显示黑屏
+    }
+}
+
+function handleError(error)
+{
+    console.log('navigator.getUserMedia error' + error);
+}
+
+
+//打开本地文件进行直播
+    document.querySelector('input[name=file-selector]').onchange = function(e){
+        // var file = e.target.files[0];
+        var file = this.files[0];
+        var srcObject = window.URL.createObjectURL(file);
+        video.src = srcObject;
+        // $('#video')[0].src = srcObject;
+    };
+
+//停止直播
+    $('#stop-push').on('click', function(){
+        clearInterval(parseInt(localStorage.interval_id));
+        video.pause();
+    });
+
+
+
+
+    //添加弹幕
+
+
+</script>
+
+
+
+
+</body>
+</html>

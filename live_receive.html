@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <script src="https://apps.bdimg.com/libs/jquery/2.1.4/jquery.min.js"></script>
+    <script src="./dist/barrage.js"></script>
+    <link rel="shortcut icon" href="./wjx.png" />
+    <title>直播-拉流端</title>
+    <style>
+        body {
+            left:0px;
+            top:0px;
+        }
+        #barrage
+        {
+            width:640px;
+            height:100px;
+        }
+        #player {
+            left:0px !important;
+            top:0px !important;
+            width:640px;
+            height:360px;
+        }
+        #send-box {
+            position:absolute;
+            top:380px;
+            left:8px;
+        }
+    </style>
+</head>
+<body>
+<div id="barrage"></div>
+<img id="player"/>
+<div id="send-box">
+    <input id="content" type="text"/>
+    <input type="submit" onclick="sends()"/>
+    <input data="danmu_start"  type="submit" value="开启弹幕"   class="buttons">
+    <input data="danmu_pause"  type="submit" value="暂停弹幕"   class="buttons">
+    <input data="danmu_resume" type="submit" value="暂停后继续" class="buttons">
+    <input data="danmu_stop"   type="submit" value="停止弹幕"   class="buttons">
+</div>
+
+
+<script>
+    //直播拉流端相关
+    var ws = new WebSocket('ws://127.0.0.1:9999/play');
+    ws.onopen = function(){
+        console.log('player handshake success');
+    };
+    ws.onmessage = function(e){
+        var data = e.data;
+        var index = data.lastIndexOf("\-");
+        var type = data.substring(index + 1,data.length);
+        var msg = data.substring(0, index);
+        if(type == "live")
+        {
+            //直播
+            document.querySelector('img').src = msg;
+        }else if(type == "barrage")
+        {
+            //弹幕
+            var time = $('#barrage').data('nowtime') + 1;
+            var barrageObj = {"text":  msg ,"color":"green","size":0,"position":0,"time": time };
+            $("#barrage").danmu("add_danmu",barrageObj);
+        }
+    };
+    ws.onerror = function(){
+        console.log('WebSocket error');
+    };
+    ws.onclose = function()
+    {
+        console.log('WebSocket closed');
+    }
+
+
+    //弹幕相关
+
+    $(document).ready(function(){
+        $("#barrage").danmu({
+            left: 0, //区域的左边边界位置，相对于父div
+            top: 0 , //区域的上边边界位置，相对于父div
+            height: 100, //区域的高度 width: 640, //区域的宽度
+            zindex :100, //div的css样式zindex
+            // speed:5000, //弹幕速度，飞过区域的毫秒数
+            speed:20000, //弹幕速度，飞过区域的毫秒数
+            // sumtime:900 , //弹幕运行总时间
+            sumtime:50000 , //弹幕运行总时间
+            danmuss:{}, //danmuss对象，运行时的弹幕内容
+            default_font_color:"#FFFFFF", //弹幕默认字体颜色
+            font_size_small:24, //小号弹幕的字体大小,注意此属性值只能是整数
+            font_size_big:28, //大号弹幕的字体大小
+            opacity:"0.9", //弹幕默认透明度
+            top_botton_danmu_time:6000 //顶端底端弹幕持续时间
+        });
+        // $('#barrage').danmu('danmu_start');  //开启弹幕
+    })
+    //发送弹幕点击事件
+    function sends()
+    {
+        var msg = $('#content').val();
+        if(msg.length <= 0)
+        {
+            alert('请输入弹幕消息');
+            return;
+        }
+        msg = msg + '-barrage';
+        ws.send(msg);
+        $("#content").val('')
+    }
+
+    //添加其他按钮点击事件
+    var objs = document.querySelectorAll('.buttons');  //根据标签获取的话可以直接写标签名，若是类名，需要加 '.',id 需要加 '#'
+
+    objs.forEach(function(obj){
+        obj.addEventListener('click',function(){
+            var sendType = $(this).attr('data');
+            $('#barrage').danmu(sendType);
+        })
+    })
+
+
+</script>
+</body>
+</html>
+
+
